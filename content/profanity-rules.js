@@ -44,6 +44,16 @@
     'scunthorpe', 'penistone', 'canal', 'dickens', 'moby dick', 'spicy', 'dike'
   ]);
 
+  // Masked variations patterns (e.g. f***, f**k, s***, b****, a**hole)
+  const MASKED_PATTERNS = [
+    '[fF][*#@!\\-]{2,5}(?:ing|ed|er|s)?',
+    '[fF][*#@!\\-]{1,2}[kK]',
+    '[sS][*#@!\\-]{2,4}',
+    '[bB][*#@!\\-]{3,5}',
+    '[aA][*#@!\\-]{2,4}hole',
+    '[mM][*#@!\\-]{3,6}[fF][*#@!\\-]{2,5}'
+  ];
+
   class ProfanityFilter {
     constructor() {
       this.categories = {
@@ -95,26 +105,26 @@
       }
 
       // Build regex pattern with leetspeak/symbol tolerance for vowels & characters
-      // e.g. f[*]ck, f[u*@]ck
       const wordPatterns = Array.from(activeWords).map(word => {
-        // Multi-word phrases like "son of a bitch"
         if (word.includes(' ')) {
           return word.split(/\s+/).map(p => this.escapeRegex(p)).join('\\s+');
         }
-
-        // Single word: build fuzzy character matching
         return this.createFuzzyPattern(word);
       });
 
-      // Match full words only using word boundaries
-      // Note: punctuation boundaries also handled
-      const combined = `\\b(?:${wordPatterns.join('|')})\\b`;
+      // Boundaries that work for both standard words and asterisk-masked words:
+      const startB = '(?<=^|[\\s"\'\\[({<])';
+      const endB = '(?=$|[\\s.,!?;:"\'\\])}>])';
+
+      const standardGroup = `\\b(?:${wordPatterns.join('|')})\\b`;
+      const maskedGroup = `${startB}(?:${MASKED_PATTERNS.join('|')})${endB}`;
+
+      const combined = `(?:${standardGroup}|${maskedGroup})`;
       this.compiledRegex = new RegExp(combined, 'gi');
       this.cache.clear();
     }
 
     createFuzzyPattern(word) {
-      // If word already contains special characters, escape
       const charMap = {
         'a': '[a@*4]',
         'e': '[e3*]',
@@ -134,16 +144,13 @@
         return `${this.escapeRegex(ch)}+`;
       });
 
-      return chars.join('[\\W_]*'); // allow separator characters like f.u.c.k or f-u-c-k
+      return chars.join('[\\W_]*');
     }
 
     escapeRegex(string) {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    /**
-     * Checks if a word is in the whitelist or default safe words
-     */
     isWhitelisted(word) {
       const lower = word.toLowerCase().trim();
       if (DEFAULT_SAFE_WORDS.has(lower)) return true;
@@ -151,11 +158,6 @@
       return false;
     }
 
-    /**
-     * Finds all profanities in the given text with character offsets
-     * @param {string} text - text to inspect
-     * @returns {Array<{word: string, index: number, length: number}>}
-     */
     findMatches(text) {
       if (!this.compiledRegex || !text) return [];
 
@@ -179,20 +181,12 @@
       return matches;
     }
 
-    /**
-     * Tests if text contains any forbidden words
-     */
     hasProfanity(text) {
       if (!this.compiledRegex || !text) return false;
       const matches = this.findMatches(text);
       return matches.length > 0;
     }
 
-    /**
-     * Masks profanities in text
-     * @param {string} text
-     * @param {'asterisk'|'tag'} style
-     */
     maskText(text, style = 'asterisk') {
       const matches = this.findMatches(text);
       if (matches.length === 0) return text;
@@ -205,8 +199,10 @@
         if (style === 'tag') {
           result += '[bleep]';
         } else {
-          // Keep first character, asterisk the rest: f*** or s***
-          if (m.word.length <= 2) {
+          // If already masked with asterisks, keep length
+          if (m.word.includes('*')) {
+            result += m.word;
+          } else if (m.word.length <= 2) {
             result += '*'.repeat(m.word.length);
           } else {
             result += m.word[0] + '*'.repeat(m.word.length - 1);
@@ -219,6 +215,5 @@
     }
   }
 
-  // Export to window/global scope for content scripts
   window.BleeprProfanityFilter = ProfanityFilter;
 })();

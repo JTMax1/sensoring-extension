@@ -14,10 +14,8 @@
     }
 
     init() {
-      // Find existing videos
       this.scanForVideos();
 
-      // Observe DOM for dynamically added videos (SPA navigation, modals, iframes)
       this.observer = new MutationObserver(() => {
         this.scanForVideos();
       });
@@ -37,33 +35,39 @@
       if (this.trackedVideos.has(video)) return;
       this.trackedVideos.add(video);
 
-      // Register video with central controller
       this.controller.registerVideo(video);
 
-      // Listen for text tracks
+      // Check text tracks immediately and periodically as video loads
+      this.checkTracks(video);
+
       const textTracks = video.textTracks;
       if (textTracks) {
-        for (let i = 0; i < textTracks.length; i++) {
-          this.attachToTrack(textTracks[i], video);
-        }
-
         textTracks.addEventListener('addtrack', (e) => {
           this.attachToTrack(e.track, video);
         });
       }
 
-      // Clean up when video removed
+      // Check for tracks on play/seek in case added dynamically
+      video.addEventListener('play', () => this.checkTracks(video));
+      video.addEventListener('seeking', () => this.checkTracks(video));
+      video.addEventListener('seeked', () => this.checkTracks(video));
+
       video.addEventListener('emptied', () => {
-        // Video source changed
         this.controller.clearVideoCues(video);
       });
     }
 
-    attachToTrack(track, video) {
-      if (this.trackedTracks.has(track)) return;
-      this.trackedTracks.add(track);
+    checkTracks(video) {
+      const textTracks = video.textTracks;
+      if (!textTracks) return;
 
-      // If track mode is disabled, we set it to 'hidden' so cues still load without forcing default browser rendering
+      for (let i = 0; i < textTracks.length; i++) {
+        this.attachToTrack(textTracks[i], video);
+      }
+    }
+
+    attachToTrack(track, video) {
+      // If mode is disabled, activate it to 'hidden' so cues fire events without disturbing native styles
       if (track.mode === 'disabled') {
         track.mode = 'hidden';
       }
@@ -73,17 +77,18 @@
         this.controller.processTrackCues(video, track.cues);
       };
 
-      // Process existing cues
       processCues();
 
-      // Listen for cue changes as track streams in
-      track.addEventListener('cuechange', () => {
-        processCues();
-        // Also check currently active cues immediately
-        if (track.activeCues && track.activeCues.length > 0) {
-          this.controller.handleActiveCues(video, track.activeCues);
-        }
-      });
+      if (!this.trackedTracks.has(track)) {
+        this.trackedTracks.add(track);
+
+        track.addEventListener('cuechange', () => {
+          processCues();
+          if (track.activeCues && track.activeCues.length > 0) {
+            this.controller.handleActiveCues(video, track.activeCues);
+          }
+        });
+      }
     }
 
     destroy() {

@@ -21,13 +21,22 @@
     }
 
     /**
-     * Sanitizes a VTTCue / TextTrackCue
+     * Sanitizes a VTTCue / TextTrackCue while preserving original text
      * @param {VTTCue|TextTrackCue} cue
      */
     maskCue(cue) {
-      if (!this.enabled || !cue || !cue.text) return;
-      if (this.filter.hasProfanity(cue.text)) {
-        cue.text = this.filter.maskText(cue.text, this.maskStyle);
+      if (!cue || !cue.text) return;
+
+      // Preserve true original text before any masking
+      if (!cue.__bleeprOriginal) {
+        cue.__bleeprOriginal = cue.text;
+      }
+
+      if (!this.enabled) return;
+
+      const original = cue.__bleeprOriginal;
+      if (this.filter.hasProfanity(original)) {
+        cue.text = this.filter.maskText(original, this.maskStyle);
       }
     }
 
@@ -36,9 +45,14 @@
      * @param {HTMLElement} element
      */
     maskElement(element) {
-      if (!this.enabled || !element) return;
+      if (!element) return;
 
-      // Handle text content of element safely
+      if (!element.__bleeprOriginal) {
+        element.__bleeprOriginal = element.textContent || '';
+      }
+
+      if (!this.enabled) return;
+
       const walker = document.createTreeWalker(
         element,
         NodeFilter.SHOW_TEXT,
@@ -48,9 +62,9 @@
 
       let textNode;
       while ((textNode = walker.nextNode())) {
-        const original = textNode.nodeValue;
-        if (original && this.filter.hasProfanity(original)) {
-          textNode.nodeValue = this.filter.maskText(original, this.maskStyle);
+        const val = textNode.nodeValue;
+        if (val && this.filter.hasProfanity(val)) {
+          textNode.nodeValue = this.filter.maskText(val, this.maskStyle);
         }
       }
     }

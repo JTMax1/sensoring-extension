@@ -12,7 +12,7 @@
       this.interpolator = new window.BleeprTimeInterpolator();
       this.masker = new window.BleeprSubtitleMasker(this.filter);
 
-      this.videoStates = new Map(); // video -> { scheduledWindows: [], animFrameId: null, tabBleepCount: 0 }
+      this.videoStates = new Map(); // video -> { scheduledWindows: [], animFrameId: null, lastTime: 0, isPlaying: boolean }
       this.tabBleepCount = 0;
       this.processedCueIds = new WeakSet();
 
@@ -20,7 +20,6 @@
     }
 
     async initSettingsListener() {
-      // Load current settings from storage
       try {
         const settings = await chrome.storage.local.get(null);
         this.updateConfig(settings);
@@ -28,7 +27,6 @@
         console.warn('[Bleepr] Could not read storage:', err);
       }
 
-      // Listen for dynamic updates from popup or background
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local') {
           const updated = {};
@@ -55,7 +53,6 @@
         this.interpolator.setPadding(config.timingPaddingMs);
       }
 
-      // Reprocess all cues if filter updated
       this.reprocessAllCues();
     }
 
@@ -65,9 +62,25 @@
       const state = {
         scheduledWindows: [],
         animFrameId: null,
+        lastTime: video.currentTime || 0,
         isPlaying: !video.paused
       };
       this.videoStates.set(video, state);
+
+      const rearmWindowsFromCurrentTime = () => {
+        const now = video.currentTime;
+        // Restore audio if mid-bleep when seeking
+        this.audio.restoreVideoAudio(video);
+
+        for (let i = 0; i < state.scheduledWindows.length; i++) {
+          const win = state.scheduledWindows[i];
+          // If window ends in the future or user sought right into it, re-arm
+          if (win.endTime >= now - 0.3) {
+            win.triggered = false;
+          }
+        }
+        state.lastTime = now;
+      };
 
       // Playback events
       video.addEventListener('play', () => {
@@ -85,17 +98,18 @@
         this.audio.restoreVideoAudio(video);
       });
 
-      video.addEventListener('seeking', () => {
-        // Reset triggered flags for windows in the future
+      video.addEventListener('seeking', rearmWindowsFromCurrentTime);
+      video.addEventListener('seeked', rearmWindowsFromCurrentTime);
+
+      video.addEventListener('timeupdate', () => {
         const now = video.currentTime;
-        for (const win of state.scheduledWindows) {
-          if (win.startTime > now) {
-            win.triggered = false;
-          }
+        // Detect backwards jumps (e.g. YouTube 'J' key, left arrow, or scrubber click)
+        if (now < state.lastTime - 0.35) {
+          rearmWindowsFromCurrentTime();
         }
+        state.lastTime = now;
       });
 
-      // Start loop if already playing
       if (!video.paused) {
         this.startPreciseLoop(video, state);
       }
@@ -116,7 +130,12 @@
         for (let i = 0; i < windows.length; i++) {
           const win = windows[i];
 
-          // Check if video currentTime entered censor window
+          // Re-arm if the playhead is before this window
+          if (currentTime < win.startTime - 0.4) {
+            win.triggered = false;
+          }
+
+          // Check if video currentTime is inside censor window
           if (!win.triggered && currentTime >= win.startTime && currentTime <= win.endTime + 0.1) {
             win.triggered = true;
             this.executeBleep(video, win.durationMs, win.word);
@@ -129,9 +148,6 @@
       state.animFrameId = requestAnimationFrame(checkPlayback);
     }
 
-    /**
-     * Executes the audio mute and beep action, and broadcasts statistics
-     */
     executeBleep(video, durationMs, word) {
       if (!this.enabled) return;
 
@@ -141,7 +157,6 @@
       this.audio.censor(video, durationMs, word);
       this.showBleepToast(video, word);
 
-      // Notify background service worker
       try {
         chrome.runtime.sendMessage({
           type: 'BLEEP_OCCURRED',
@@ -151,12 +166,33 @@
       } catch (e) {}
     }
 
-    /**
-     * Instant bleep trigger (e.g. from YouTube live caption mutation)
-     */
     triggerInstantBleep(video, durationMs, word) {
       if (!this.enabled) return;
       this.executeBleep(video, durationMs, word);
+    }
+
+    addScheduledWindow(video, win) {
+      let state = this.videoStates.get(video);
+      if (!state) {
+        this.registerVideo(video);
+        state = this.videoStates.get(video);
+      }
+
+      // Avoid exact duplicates
+      const exists = state.scheduledWindows.some(
+        w => Math.abs(w.startTime - win.startTime) < 0.2
+      );
+
+      if (!exists) {
+        state.scheduledWindows.push({
+          word: win.word,
+          startTime: win.startTime,
+          endTime: win.endTime,
+          durationMs: win.durationMs,
+          triggered: false
+        });
+        state.scheduledWindows.sort((a, b) => a.startTime - b.startTime);
+      }
     }
 
     processTrackCues(video, cues) {
@@ -168,14 +204,15 @@
         if (this.processedCueIds.has(cue)) continue;
         this.processedCueIds.add(cue);
 
-        const text = cue.text || '';
+        // Always use original text if cue was masked earlier
+        const text = cue.__bleeprOriginal || cue.text || '';
         const matches = this.filter.findMatches(text);
 
         if (matches.length > 0) {
-          // Mask cue visually
+          // Visually mask cue
           this.masker.maskCue(cue);
 
-          // Interpolate exact word timings
+          // Calculate precise word offset windows
           const windows = this.interpolator.calculateCensorWindows(
             cue.startTime,
             cue.endTime,
@@ -184,14 +221,10 @@
           );
 
           for (const win of windows) {
-            win.triggered = false;
-            state.scheduledWindows.push(win);
+            this.addScheduledWindow(video, win);
           }
         }
       }
-
-      // Sort windows by startTime
-      state.scheduledWindows.sort((a, b) => a.startTime - b.startTime);
     }
 
     handleActiveCues(video, activeCues) {
@@ -200,12 +233,12 @@
 
       for (let i = 0; i < activeCues.length; i++) {
         const cue = activeCues[i];
-        const text = cue.text || '';
+        const text = cue.__bleeprOriginal || cue.text || '';
         const matches = this.filter.findMatches(text);
 
         if (matches.length > 0) {
           this.masker.maskCue(cue);
-          // If not already in scheduledWindows, schedule now
+
           const alreadyScheduled = state.scheduledWindows.some(
             w => Math.abs(w.startTime - cue.startTime) < 0.2
           );
@@ -217,11 +250,7 @@
               text,
               matches
             );
-            windows.forEach(w => {
-              w.triggered = false;
-              state.scheduledWindows.push(w);
-            });
-            state.scheduledWindows.sort((a, b) => a.startTime - b.startTime);
+            windows.forEach(w => this.addScheduledWindow(video, w));
           }
         }
       }
@@ -250,7 +279,6 @@
     }
 
     showBleepToast(video, word) {
-      // Create a subtle unobtrusive HUD toast near video corner
       try {
         const existing = document.getElementById('bleepr-hud-indicator');
         if (existing) existing.remove();
@@ -269,7 +297,7 @@
           top: '20px',
           right: '20px',
           zIndex: '2147483647',
-          background: 'rgba(15, 23, 42, 0.85)',
+          background: 'rgba(15, 23, 42, 0.9)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
           color: '#ffffff',
@@ -286,13 +314,11 @@
 
         document.body.appendChild(toast);
 
-        // Animate in
         requestAnimationFrame(() => {
           toast.style.opacity = '1';
           toast.style.transform = 'translateY(0)';
         });
 
-        // Animate out
         setTimeout(() => {
           toast.style.opacity = '0';
           toast.style.transform = 'translateY(-6px)';
