@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bleepr Extension - Interactive Test Harness</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #161e31;
+      --text: #f8fafc;
+      --accent: #6366f1;
+      --accent-cyan: #38bdf8;
+      --censor-red: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    header {
+      text-align: center;
+    }
+    h1 {
+      font-size: 26px;
+      background: linear-gradient(to right, #ffffff, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    p.desc {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+    .video-wrapper {
+      position: relative;
+      background: #000000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: 100%;
+      height: 380px;
+      background: #050811;
+      display: block;
+    }
+    /* Style default subtitles */
+    video::cue {
+      background: rgba(15, 23, 42, 0.85);
+      color: #ffffff;
+      font-family: sans-serif;
+      font-size: 20px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: var(--card);
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      background: #4f46e5;
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .cues-table {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .cues-table h3 {
+      font-size: 14px;
+      margin-bottom: 12px;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .cue-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+    }
+    .cue-item:last-child { border-bottom: none; }
+    .cue-time {
+      color: #94a3b8;
+      font-family: monospace;
+      font-size: 12px;
+      min-width: 140px;
+    }
+    .cue-text {
+      flex: 1;
+      padding: 0 10px;
+    }
+    .cue-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--censor-red);
+    }
+    .cue-badge.clean {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+    }
+    .notice {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #e0f2fe;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Bleepr Test Video Harness</h1>
+      <p class="desc">Verify real-time subtitle tracking, 1000Hz censor beep, video muting, and visual caption masking.</p>
+    </header>
+
+    <div class="notice">
+      💡 <strong>How to test:</strong> Ensure the Bleepr extension is loaded in Chrome. Click <strong>Start Demo Video</strong> below. As the synthetic speech and subtitles reach words like <em>"fuck"</em>, <em>"shit"</em>, <em>"motherfucker"</em>, Bleepr will automatically mute the video audio and play a TV censor tone! Clean phrases like <em>"assassin class"</em> remain audible.
+    </div>
+
+    <div class="video-wrapper">
+      <video id="test-video" controls playsinline>
+        <track id="test-track" kind="subtitles" label="English" src="test-captions.vtt" srclang="en" default>
+      </video>
+    </div>
+
+    <div class="controls">
+      <div style="display:flex; gap:10px;">
+        <button id="start-btn" class="btn">▶ Start Demo Video</button>
+        <button id="jump-fword" class="btn btn-secondary">Seek to F-Word (0:05)</button>
+        <button id="jump-motherfucker" class="btn btn-secondary">Seek to "Motherfucker" (0:14)</button>
+      </div>
+      <span id="time-display" style="font-family:monospace; color:#94a3b8; font-size:13px;">00:00 / 00:35</span>
+    </div>
+
+    <div class="cues-table">
+      <h3>Active Subtitle Test Script</h3>
+      <div class="cue-item">
+        <span class="cue-time">00:01 - 00:04.5</span>
+        <span class="cue-text">Welcome to the Bleepr video profanity sensor test video.</span>
+        <span class="cue-badge clean">Clean</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:05 - 00:09.0</span>
+        <span class="cue-text">In this sentence we have the f-word: what the fuck are you doing here?</span>
+        <span class="cue-badge">Censors "fuck"</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:09.8 - 00:13.5</span>
+        <span class="cue-text">This is another phrase: holy shit that was completely crazy!</span>
+        <span class="cue-badge">Censors "shit"</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:14.2 - 00:18.0</span>
+        <span class="cue-text">Here is a compound vulgarity: get out of here you motherfucker!</span>
+        <span class="cue-badge">Censors "motherfucker"</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:19.0 - 00:23.0</span>
+        <span class="cue-text">And now we test a clean sentence: the quick brown fox jumps over the lazy dog.</span>
+        <span class="cue-badge clean">Clean</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:24.0 - 00:28.0</span>
+        <span class="cue-text">Testing moderate words: don't be an asshole or a bitch today.</span>
+        <span class="cue-badge">Censors "asshole", "bitch"</span>
+      </div>
+      <div class="cue-item">
+        <span class="cue-time">00:29.0 - 00:33.0</span>
+        <span class="cue-text">Testing whitelisted word protection: this assassin is taking a master class.</span>
+        <span class="cue-badge clean">Clean (Safe Words)</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Generates an interactive synthetic canvas stream with an audio track
+    const video = document.getElementById('test-video');
+    const startBtn = document.getElementById('start-btn');
+    const jumpFword = document.getElementById('jump-fword');
+    const jumpMf = document.getElementById('jump-motherfucker');
+    const timeDisplay = document.getElementById('time-display');
+
+    // Create an animated canvas to feed video element
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+
+    // Audio synthesis for background dialogue simulation
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = audioCtx.createMediaStreamDestination();
+
+    // Background ambient audio tone to verify audio muting
+    const ambientOsc = audioCtx.createOscillator();
+    ambientOsc.type = 'triangle';
+    ambientOsc.frequency.setValueAtTime(220, audioCtx.currentTime); // 220Hz A3 gentle note
+    const ambientGain = audioCtx.createGain();
+    ambientGain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    ambientOsc.connect(ambientGain);
+    ambientGain.connect(dest);
+    ambientOsc.start();
+
+    // Combined stream
+    const canvasStream = canvas.captureStream(30);
+    const audioTrack = dest.stream.getAudioTracks()[0];
+    if (audioTrack) {
+      canvasStream.addTrack(audioTrack);
+    }
+    video.srcObject = canvasStream;
+
+    // Render loop for video display
+    let angle = 0;
+    function draw() {
+      // Dark futuristic background
+      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Soundwave visualization
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let x = 0; x < canvas.width; x += 10) {
+        const y = canvas.height / 2 + Math.sin(x * 0.05 + angle) * 35;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Digital playback timer
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 22px monospace';
+      ctx.textAlign = 'center';
+      const cur = video.currentTime || 0;
+      const mins = String(Math.floor(cur / 60)).padStart(2, '0');
+      const secs = String(Math.floor(cur % 60)).padStart(2, '0');
+      ctx.fillText(`TEST VIDEO PLAYBACK: ${mins}:${secs}`, canvas.width / 2, 80);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '14px sans-serif';
+      ctx.fillText('Audio Track: Active 220Hz Background Soundtrack', canvas.width / 2, 115);
+
+      angle += 0.06;
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // Buttons
+    startBtn.addEventListener('click', () => {
+      audioCtx.resume();
+      if (video.paused) {
+        video.play();
+        startBtn.textContent = '⏸ Pause Demo';
+      } else {
+        video.pause();
+        startBtn.textContent = '▶ Resume Demo';
+      }
+    });
+
+    jumpFword.addEventListener('click', () => {
+      audioCtx.resume();
+      video.currentTime = 5.0;
+      video.play();
+      startBtn.textContent = '⏸ Pause Demo';
+    });
+
+    jumpMf.addEventListener('click', () => {
+      audioCtx.resume();
+      video.currentTime = 14.0;
+      video.play();
+      startBtn.textContent = '⏸ Pause Demo';
+    });
+
+    // Add dynamic cues as fallback for file:// protocol where track.src may encounter CORS
+    window.addEventListener('load', () => {
+      const trackElement = document.getElementById('test-track');
+      let textTrack = video.textTracks[0];
+
+      if (!textTrack) {
+        textTrack = video.addTextTrack('subtitles', 'English', 'en');
+        textTrack.mode = 'showing';
+      }
+
+      // Check if cues loaded from src
+      setTimeout(() => {
+        if (!textTrack.cues || textTrack.cues.length === 0) {
+          console.log('[Test Harness] Injecting dynamic cues for local test...');
+          const cueData = [
+            { start: 1.0, end: 4.5, text: 'Welcome to the Bleepr video profanity sensor test video.' },
+            { start: 5.0, end: 9.0, text: 'In this sentence we have the f-word: what the fuck are you doing here?' },
+            { start: 9.8, end: 13.5, text: 'This is another phrase: holy shit that was completely crazy!' },
+            { start: 14.2, end: 18.0, text: 'Here is a compound vulgarity: get out of here you motherfucker!' },
+            { start: 19.0, end: 23.0, text: 'And now we test a clean sentence: the quick brown fox jumps over the lazy dog.' },
+            { start: 24.0, end: 28.0, text: "Testing moderate words: don't be an asshole or a bitch today." },
+            { start: 29.0, end: 33.0, text: 'Testing whitelisted word protection: this assassin is taking a master class.' }
+          ];
+
+          cueData.forEach(c => {
+            const cue = new VTTCue(c.start, c.end, c.text);
+            textTrack.addCue(cue);
+          });
+        }
+      }, 500);
+    });
+
+    video.addEventListener('timeupdate', () => {
+      const cur = video.currentTime || 0;
+      const mins = String(Math.floor(cur / 60)).padStart(2, '0');
+      const secs = String(Math.floor(cur % 60)).padStart(2, '0');
+      timeDisplay.textContent = `${mins}:${secs} / 00:35`;
+    });
+  </script>
+</body>
+</html>

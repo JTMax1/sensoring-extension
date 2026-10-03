@@ -1,0 +1,22 @@
+WEBVTT - Bleepr Extension Test Track
+
+00:00:01.000 --> 00:00:04.500
+Welcome to the Bleepr video profanity sensor test video.
+
+00:00:05.000 --> 00:00:09.000
+In this sentence we have the f-word: what the fuck are you doing here?
+
+00:00:09.800 --> 00:00:13.500
+This is another phrase: holy shit that was completely crazy!
+
+00:00:14.200 --> 00:00:18.000
+Here is a compound vulgarity: get out of here you motherfucker!
+
+00:00:19.000 --> 00:00:23.000
+And now we test a clean sentence: the quick brown fox jumps over the lazy dog.
+
+00:00:24.000 --> 00:00:28.000
+Testing moderate words: don't be an asshole or a bitch today.
+
+00:00:29.000 --> 00:00:33.000
+Testing whitelisted word protection: this assassin is taking a master class.
